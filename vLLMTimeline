@@ -1,0 +1,132 @@
+Timeline to Contribute to vLLM
+🔹 Phase 0 — Orientation (Week 0–1)
+
+Goal: Understand how vLLM actually runs inference
+
+What you’ll do
+
+Read the scheduler → executor → worker flow
+
+Run vllm serve locally (even CPU-only is fine)
+
+Trace:
+
+Prefill vs Decode
+
+KV cache lifecycle
+
+CUDA Graph usage (enabled vs eager)
+
+Output
+
+You can explain:
+
+Why decode is graph-captured
+
+Where memory blows up
+
+What happens per token
+
+✅ Time: ~5–7 days
+✅ No CUDA coding yet
+
+🔹 Phase 1 — Read Code Like an Owner (Week 1–3)
+
+Goal: Be comfortable navigating vLLM internals
+
+Focus files / areas
+
+Scheduler (batching, token flow)
+
+Model executor
+
+KV cache manager
+
+CUDA graph wrappers
+
+Attention backends (FlashAttention / FlashInfer paths)
+
+What “ready” looks like
+
+You can answer:
+
+“Where would I hook X?”
+
+“Why is this eager fallback happening?”
+
+“Which path runs in decode?”
+
+✅ Time: ~10–14 days
+✅ This is the hardest mental step
+
+🔹 Phase 2 — First Contribution (Week 3–5)
+
+Goal: Get merged (this is critical psychologically)
+
+Best first PR types
+
+Fix a small bug
+
+Improve error handling
+
+Add logging / assertions
+
+Improve documentation or comments
+
+Minor performance cleanup (non-kernel)
+
+These are high-acceptance and low-review friction.
+
+What maintainers look for
+
+Clear PR description
+
+Repro steps
+
+No breaking behavior
+
+✅ Time: ~7–10 days
+🎯 This is where you officially become a contributor
+
+🔹 Phase 3 — Inference-Critical PRs (Week 6–10)
+
+Goal: Become a recognizable contributor
+
+Now you target high-signal areas:
+
+Area	Why it matters
+CUDA Graph capture paths	Latency & throughput
+KV cache memory layout	VRAM pressure
+MoE / FusedMoE plumbing	Scale models
+Scheduler heuristics	Tail latency
+Quantization hooks	Cost reduction
+
+At this stage:
+
+Maintainers recognize your name
+
+Review depth increases
+
+Your PRs get referenced in issues
+
+✅ Time: 4–6 weeks after first PR
+
+🧠 Why you can move faster than average
+
+Most contributors:
+
+Are strong Python devs but weak on inference
+
+Or CUDA devs but weak on serving systems
+
+You already understand:
+
+Inference cost models
+
+KV cache growth
+
+CUDA Graph motivation
+
+Throughput vs latency trade-offs
+
+👉 That cuts the learning curve by ~40–50%.
