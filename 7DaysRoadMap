@@ -1,0 +1,126 @@
+vLLM Codebase Roadmap: 7-Day Plan
+🔹 Day 1: Orientation & High-Level Flow
+
+Goals:
+
+Understand what vLLM does at a systems level
+
+Run a demo locally and trace high-level architecture
+
+Tasks:
+
+Clone the repo: https://github.com/vllm-project/vllm
+
+Read README.md and try basic generation (CLI or API)
+
+Skim these files:
+
+vllm/engine/llm_engine.py
+
+vllm/entrypoints/api_server.py
+
+Draw your own block diagram: input → batching → decode → output
+
+🔹 Day 2: Engine & Model Interface
+
+Goals:
+
+Learn how models are loaded and used for prefill/decode
+
+Understand LLMEngine, ModelExecutor, and their orchestration
+
+Focus Files:
+
+vllm/engine/llm_engine.py
+
+vllm/engine/model_executor.py
+
+vllm/model_executor/* (esp. layers.py, sampling_metadata.py)
+
+🔹 Day 3: Scheduler — Core Logic
+
+Goals:
+
+Understand continuous batching and scheduling heuristics
+
+Focus Files:
+
+vllm/scheduler/scheduler.py
+
+vllm/scheduler/policy.py
+
+vllm/scheduler/worker.py
+
+Key concepts: request queuing, prioritization, GPU assignment
+
+🔹 Day 4: KV Cache & Paging System
+
+Goals:
+
+Dive into vLLM’s paged KV cache implementation
+
+Focus Files:
+
+vllm/kv_cache/*
+
+Understand:
+
+PagedAttention
+
+Cache block allocation and reuse
+
+cache_block.py, kv_cache.py
+
+Optional but valuable:
+
+Explore vLLM’s use of FlashAttention/paged attention mechanisms
+
+🔹 Day 5: Decoding, Sampling & Performance
+
+Goals:
+
+Understand how token decoding works
+
+Learn how sampling, logits, and CUDA are managed
+
+Focus Files:
+
+vllm/model_executor/layers.py
+
+vllm/sampling_params.py
+
+Token loop inside llm_engine.py
+
+🔹 Day 6: API Server & External Interface
+
+Goals:
+
+Understand how the API server exposes the engine
+
+Focus Files:
+
+vllm/entrypoints/api_server.py
+
+vllm/engine/generation.py
+
+Understand response formats, queue flow
+
+Try:
+
+Customize an API response or add latency logging
+
+🔹 Day 7: End-to-End Trace + Contribution Ready
+
+Goals:
+
+Pick one inference request
+
+Trace it through: Input → Scheduler → Decode → Return
+
+Tasks:
+
+Add print/debug logs
+
+Read CONTRIBUTING.md
+
+Pick a good first issue or performance task to try
