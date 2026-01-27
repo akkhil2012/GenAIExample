@@ -1,0 +1,541 @@
+llm_engine.py
+----
+
+┌────────────────────────────────────────┐
+│  User: add_request(request_id, prompt, │
+│         params, lora_request, ...)     │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  _validate_lora(lora_request)          │
+│  - Check LoRA enabled if request given │
+│  - Warn about tokenizer deprecation    │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  _validate_params(params)              │
+├────────────────────────────────────────┤
+│  If SamplingParams:                    │
+│    ├─ _validate_logprobs()             │
+│    ├─ _validate_sampling_params()      │
+│    ├─ _validate_logit_bias()           │
+│    ├─ _validate_allowed_token_ids()    │
+│    ├─ _validate_supported_sampling()   │
+│    └─ _validate_structured_output()    │
+│       └─ Route to backend validator:   │
+│          ├─ xgrammar                   │
+│          ├─ guidance                   │
+│          ├─ outlines                   │
+│          ├─ lm-format-enforcer         │
+│          └─ auto (try xgrammar first)  │
+│                                        │
+│  If PoolingParams: Skip sampling      │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  _validate_multi_modal_uuids(prompt)   │
+│  - Check UUID count matches MM data    │
+│  - Handle encoder/decoder separately   │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│ _maybe_build_mm_uuids() OR             │
+│ extract from prompt["multi_modal_uuids"]│
+│                                        │
+│ Result: mm_uuids dict or None          │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  InputPreprocessor.preprocess()        │
+│                                        │
+│  Input: prompt + mm_uuids              │
+│                                        │
+│  1. Tokenize text                      │
+│  2. Extract multimodal data            │
+│  3. Preprocess MM (to embeddings)      │
+│  4. Insert MM tokens in sequence       │
+│                                        │
+│  Returns: ProcessorInputs              │
+│    ├─ prompt_token_ids or None         │
+│    ├─ prompt_embeds or None            │
+│    ├─ mm_kwargs (data)                 │
+│    ├─ mm_placeholders (positions)      │
+│    └─ mm_hashes (identifiers)          │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  split_enc_dec_inputs(processed_inputs)│
+│                                        │
+│  Returns: (encoder_inputs,             │
+│            decoder_inputs)             │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  _validate_model_inputs()              │
+│                                        │
+│  For each (encoder, decoder):          │
+│    ├─ Check not empty (if needed)      │
+│    ├─ Validate token IDs in vocab      │
+│    └─ Check length <= max_model_len    │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  Extract prompt_token_ids or embeds    │
+│                                        │
+│  If decoder["type"] == "embeds":       │
+│    prompt_embeds = decoder.embeddings  │
+│    prompt_token_ids = None             │
+│  Else:                                 │
+│    prompt_token_ids = decoder.token_ids│
+│    prompt_embeds = None                │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  Process Sampling/Pooling Params       │
+│                                        │
+│  If SamplingParams:                    │
+│    ├─ Clone params                     │
+│    ├─ Auto-compute max_tokens if None: │
+│    │  max_tokens = max_model_len -     │
+│    │               prompt_length        │
+│    ├─ Update from generation config    │
+│    └─ Update from tokenizer            │
+│                                        │
+│  If PoolingParams:                     │
+│    └─ Clone params                     │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  Build MultiModalFeatureSpec list      │
+│                                        │
+│  If decoder["type"] == "multimodal":   │
+│    ├─ Extract MM data/hashes/positions │
+│    ├─ Sort by position (argsort)       │
+│    └─ For each (modality, idx):        │
+│       └─ Create MultiModalFeatureSpec: │
+│          ├─ data                       │
+│          ├─ modality                   │
+│          ├─ identifier (via MM hash)   │
+│          ├─ mm_position                │
+│          └─ mm_hash                    │
+│  Else:                                 │
+│    └─ mm_features = None               │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  Create EngineCoreRequest              │
+│                                        │
+│  return EngineCoreRequest(             │
+│    request_id=request_id,              │
+│    prompt_token_ids,                   │
+│    prompt_embeds,                      │
+│    mm_features,                        │
+│    sampling_params or pooling_params,  │
+│    eos_token_id,                       │
+│    arrival_time,                       │
+│    lora_request,                       │
+│    cache_salt,                         │
+│    priority,                           │
+│    data_parallel_rank,                 │
+│    trace_headers                       │
+│  )                                     │
+└────────────┬─────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────┐
+│  Return to LLMEngine.add_request()     │
+│                                        │
+│  assign_request_id() adds uniqueness   │
+│  external_req_id = original            │
+│  request_id = original + "-random8"    │
+└────────────────────────────────────────┘
+
+
+
+Core.py
+---
+
+┌─────────────────────────────────────────┐
+│  LLMEngine.add_request(request_id, ...) │
+└────────────┬──────────────────────────────┘
+             │
+             ↓ (EngineCoreRequest)
+┌─────────────────────────────────────────┐
+│  EngineCoreClient sends to EngineCoreProc│
+│  via ZMQ (ADD request)                  │
+└────────────┬──────────────────────────────┘
+             │
+             ↓
+┌─────────────────────────────────────────┐
+│  Input Socket Thread receives           │
+│  (process_input_sockets)                │
+└────────────┬──────────────────────────────┘
+             │
+             ↓
+┌─────────────────────────────────────────┐
+│  preprocess_add_request():              │
+│  ├─ Load MM data from cache             │
+│  ├─ Initialize structured output grammar│
+│  └─ Convert to Request object           │
+└────────────┬──────────────────────────────┘
+             │
+             ↓
+┌─────────────────────────────────────────┐
+│  input_queue.put((ADD, request))        │
+└────────────┬──────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  run_busy_loop() iteration:                    │
+│  1) _process_input_queue()                     │
+│     └─ Dequeue request & call add_request()   │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  scheduler.add_request(request)                │
+│  └─ Adds to pending queue                      │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  2) _process_engine_step()                     │
+│     (run whenever scheduler has requests)      │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  scheduler.schedule()                          │
+│  ├─ Select pending requests                    │
+│  ├─ Allocate KV cache blocks                   │
+│  ├─ Create batches for execution               │
+│  └─ Return SchedulerOutput                     │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  executor.execute_model(scheduler_output,      │
+│                         non_block=True)        │
+│  └─ Submits GPU kernels, returns Future        │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  future.result()                               │
+│  └─ Block until GPU execution completes        │
+│     Returns ModelRunnerOutput                  │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  scheduler.get_grammar_bitmask()               │
+│  └─ Get sampling constraints for structured   │
+│     output (if enabled)                        │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  executor.sample_tokens(grammar_output)        │
+│  ├─ Sample next token IDs from logits         │
+│  └─ Apply structured output constraints        │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  _process_aborts_queue()                       │
+│  └─ Handle any aborted requests                │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  scheduler.update_from_output(                 │
+│    scheduler_output, model_output)             │
+│  ├─ Update request states with new tokens      │
+│  ├─ Mark finished requests                     │
+│  └─ Return EngineCoreOutputs                   │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  output_queue.put((client_index,               │
+│                    EngineCoreOutputs))         │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  Output Socket Thread receives                 │
+│  (process_output_sockets)                      │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  Send EngineCoreOutputs back to client         │
+│  via ZMQ using MessagePack encoding            │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌────────────────────────────────────────────────┐
+│  EngineCoreClient receives outputs             │
+│  └─ Returns to OutputProcessor in LLMEngine    │
+└────────────────────────────────────────────────┘
+
+
+
+Interface.py:
+---
+
+
+
+
+Scheduler.py
+---
+
+┌──────────────────────────────────┐
+│  Request enters scheduler         │
+│  (add_request from InputProcessor)│
+└────────────┬─────────────────────┘
+             │
+             ↓
+        ┌────────────┐
+        │ WAITING    │ (Context phase: pending prompt tokens)
+        │ Queue      │
+        └────────────┘
+             │
+             ↓ (when scheduled in schedule())
+        ┌────────────┐
+        │ RUNNING    │ (GPU execution in progress)
+        │ Batch      │
+        └────────────┘
+             │
+             ↓ (in update_from_output())
+             │
+        ┌─────────────────────────────┐
+        │ Token Generated              │
+        │ ├─ Check finish conditions:  │
+        │ ├─ max_tokens reached?       │
+        │ ├─ EOS token?                │
+        │ ├─ Stop string?              │
+        │ └─ Error?                    │
+        └─────┬───────────────────────┘
+              │
+        ┌─────┴──────────────────────┐
+        │                            │
+    Yes ↓                            ↓ No
+  ┌──────────────┐         ┌──────────────────┐
+  │ FINISHED     │         │ Back to WAITING  │
+  │ (next iter)  │         │ (for next token) │
+  └──────────────┘         └──────────────────┘
+        │                        │
+        ↓                        ↓
+  Output queued             schedule() again
+  for return
+
+
+┌─────────────────────────────────────┐
+│  schedule() called from EngineCore  │
+└────────────┬────────────────────────┘
+             │
+             ↓
+  ┌──────────────────────────────┐
+  │ 1) RUNNING REQUESTS          │
+  │    (generating next token)   │
+  └──────────┬───────────────────┘
+             │
+        ┌────┴──────────────────────────────┐
+        ↓                                   ↓
+  Can allocate blocks?            No blocks available?
+        │                                   │
+       Yes                                 Yes
+        │                                   │
+        ↓                                   ↓
+   Schedule request          PREEMPT low-priority
+   (add to batch)            (free KV cache)
+   Decrease token_budget          │
+        │                         ↓
+        │                  Try allocate again
+        │                         │
+        └────────────┬────────────┘
+                     │
+                     ↓
+  ┌──────────────────────────────┐
+  │ 2) WAITING REQUESTS          │
+  │    (new or resumed)          │
+  │                              │
+  │ Check:                       │
+  │ ├─ Remote KV cache ready?    │
+  │ ├─ Grammar compiled?         │
+  │ ├─ Running queue not full?   │
+  │ └─ Token budget available?   │
+  └──────────┬───────────────────┘
+             │
+             ├─ YES → allocate blocks
+             │          check prefix cache
+             │          add to batch
+             │          move to RUNNING
+             │
+             └─ NO → stay in WAITING
+                     (retry next iteration)
+             │
+             ↓
+  ┌──────────────────────────────┐
+  │ 3) BUILD SCHEDULER OUTPUT    │
+  │                              │
+  │ Contains:                    │
+  │ ├─ New requests to start     │
+  │ ├─ Cached requests to resume │
+  │ ├─ KV block allocations      │
+  │ ├─ Encoder inputs            │
+  │ └─ Spec decode tokens        │
+  └────────────┬─────────────────┘
+               │
+               ↓
+    Return SchedulerOutput
+
+
+----
+┌──────────────────────────────────────────────────┐
+│  User sends request to LLMEngine                 │
+│  (prompt, sampling_params, request_id)           │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  LLMEngine.add_request()                         │
+│  ├─ Creates EngineCoreRequest                    │
+│  └─ Sends to InputProcessor                      │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  InputProcessor.process_inputs()                 │
+│  ├─ Tokenize prompt                              │
+│  ├─ Validate parameters                          │
+│  ├─ Process multimodal data                      │
+│  └─ Returns processed EngineCoreRequest          │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  EngineCore.preprocess_add_request()             │
+│  ├─ Load multimodal cache                        │
+│  ├─ Initialize grammar                           │
+│  └─ Create internal Request object               │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  Scheduler.add_request()                         │
+│  ├─ Add to waiting queue                         │
+│  └─ request.status = WAITING                     │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+     [MAIN ENGINE LOOP]
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  Scheduler.schedule()                            │
+│  ├─ Select requests to run                       │
+│  ├─ Allocate KV cache blocks                     │
+│  ├─ Move WAITING → RUNNING                       │
+│  └─ Return SchedulerOutput                       │
+│     ├─ Which requests to execute                 │
+│     ├─ How many tokens per request               │
+│     ├─ Which KV blocks to use                    │
+│     └─ Encoder inputs to process                 │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  Executor.execute_model(SchedulerOutput)         │
+│  ├─ Prepare GPU batches                          │
+│  ├─ Load KV cache blocks                         │
+│  ├─ Run transformer forward pass                 │
+│  ├─ Compute logits                               │
+│  └─ Return Future[ModelRunnerOutput]             │
+│     └─ future.result() = ModelRunnerOutput       │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  Executor.sample_tokens(GrammarOutput)           │
+│  ├─ Apply sampling strategy (temperature, top-p) │
+│  ├─ Apply grammar constraints (if structured)    │
+│  └─ Select token IDs from logits                 │
+│     └─ Returns sampled_token_ids                 │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  Scheduler.update_from_output()                  │
+│  ├─ Append tokens to request                     │
+│  ├─ Check stop conditions:                       │
+│  │  ├─ EOS token?                                │
+│  │  ├─ Max tokens reached?                       │
+│  │  ├─ Stop string match?                        │
+│  │  └─ Error?                                    │
+│  ├─ Extract logprobs                             │
+│  ├─ Move RUNNING → FINISHED if stopped           │
+│  ├─ Free KV cache if finished                    │
+│  └─ Return EngineCoreOutputs                     │
+│     ├─ New token IDs                             │
+│     ├─ Finish reason                             │
+│     └─ Metrics                                   │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  OutputProcessor.process_outputs()               │
+│  ├─ Detokenize tokens → text                     │
+│  ├─ Format logprobs                              │
+│  ├─ Create RequestOutput objects                 │
+│  └─ Handle streaming (delta vs cumulative)       │
+│     └─ RequestOutput for user                    │
+└────────────┬─────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────────────────────┐
+│  User receives RequestOutput                     │
+│  ├─ request_id                                   │
+│  ├─ text (generated)                             │
+│  ├─ finish_reason                                │
+│  └─ metrics                                      │
+└──────────────────────────────────────────────────┘
+
+
+Complete flow:
+----
+User Request
+    ↓
+LLMEngine.add_request()
+    ↓
+InputProcessor.process_inputs() ✓ (Explained)
+    ↓
+EngineCore.add_request() ✓ (Explained)
+    ↓
+Scheduler.add_request() ← Next to understand
+    ↓
+[Main Loop]
+    ↓
+Scheduler.schedule() ← Understanding this is critical
+    ↓
+ModelExecutor.execute_model() ← How GPU gets invoked
+    ↓
+ModelRunnerOutput
+    ↓
+Scheduler.update_from_output() ← State updates
+    ↓
+OutputProcessor.process_outputs() ← Format for user
+    ↓
+RequestOutput (to user)
