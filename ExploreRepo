@@ -1,0 +1,112 @@
+0) Your mental model (keep this in front of you)
+
+Request → Engine → Scheduler → Worker/ModelRunner → KV cache (PagedAttention) → Sampling → Stream back
+
+vLLM’s own docs describe LLMEngine as the core: it owns tokenizer, model, KV cache and runs iteration-level scheduling via engine.step().
+
+1) Start here: Engine (turn request into “step() loop”)
+Files to open
+
+vllm/engine/llm_engine.py (core engine)
+
+vllm/engine/async_llm_engine.py (online serving wrapper)
+
+vLLM docs for LLMEngine (good overview of responsibilities)
+
+What to look for
+
+Search inside engine code for:
+
+add_request(...) (how a prompt becomes an internal request)
+
+step() (the main scheduling/execution loop)
+
+where it calls into the scheduler and worker components
+
+In docs, note the line: “request is added… processed by the scheduler as engine.step() is called.”
+
+2) The heart: Scheduler (continuous batching + token budgets)
+Files to open
+
+vllm/v1/core/sched/scheduler.py (V1 scheduler)
+
+(Older path exists in some versions) vllm/core/scheduling.py is referenced in community threads
+
+What to understand from schedule()
+
+You want to be able to answer these by pointing to code:
+
+How does it choose which sequence groups run this step?
+
+How does it mix prefill and decode in one heterogeneous batch (chunked prefill ideas)?
+
+What are the “budgets” (tokens/slots/memory) that stop a request from being scheduled?
+
+The V1 scheduler’s schedule() is explicitly called out in issues as the scheduling entry point.
+
+3) Execution: Worker + “profile_run” (how GPU work is triggered)
+Files to open
+
+vllm/worker/worker.py (worker process + model execution hooks). A discussion points directly to profile_run here.
+
+What to look for
+
+Where the worker receives a “batch plan” from scheduler
+
+How it builds model inputs (input_ids, positions, attention metadata)
+
+Anything around GPU memory sizing / KV blocks (often ties into profile_run)
+
+That community thread is useful because it links to real code paths used to estimate memory.
+
+4) Model execution: model_executor (forward pass + model wrappers)
+Files to open
+
+vllm/model_executor/... (model wrappers, runner, HF model adapters)
+
+Example model file: vllm/model_executor/models/llama.py (easy to scan to see how HF models are adapted)
+
+What to learn here
+
+How vLLM standardizes different model architectures into a common “execute model” path
+
+Where logits come out and how sampling is applied (temperature/top_p/etc.)
+
+5) The “vLLM magic”: KV cache + PagedAttention
+
+To understand why vLLM is fast, read PagedAttention conceptually first, then match it to code:
+
+Paper: PagedAttention (what KV blocks & paging mean)
+
+Then locate the KV cache manager code and how “block tables” map sequences → physical KV blocks.
+
+Don’t start with CUDA kernels. First be able to explain: “a sequence owns a list of KV blocks; blocks are allocated/freed dynamically; attention reads via a block table.”
+
+6) Practical way to navigate (3 commands that prevent getting lost)
+
+Use ripgrep in the repo:
+
+rg -n "class LLMEngine|def step\\(|def add_request\\(" vllm/engine
+rg -n "def schedule\\(" vllm/v1/core/sched
+rg -n "profile_run|execute_model|ModelRunner|kv cache|block table" vllm
+
+
+Then build a 1-page note:
+
+What data structure represents a request?
+
+What object represents a “batch for this step”?
+
+Where are KV blocks allocated?
+
+Where is sampling applied?
+
+7) If you want the exact “follow one request” trace
+
+Tell me which path you’re focusing on first:
+
+Offline: LLM(...) usage
+
+Online: vllm serve / OpenAI-compatible server path
+
+V1 scheduler deep dive: prefill+decode mixing, token budgets, waiting/running queues
