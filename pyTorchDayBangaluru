@@ -1,0 +1,3 @@
+Deploying massive Mixture-of-Experts (MoE) models is primarily constrained by memory bandwidth and KV-cache fragmentation. This session presents an optimized inference pipeline integrating vLLM’s PagedAttention and continuous batching with the native hardware acceleration of the NVIDIA Blackwell architecture. We will demonstrate the implementation of native NVFP4 quantization on Blackwell Tensor Cores, analyzing how 4-bit floating-point precision on Blackwell mitigates memory bandwidth bottlenecks to accelerate tensor execution and maximize token throughput for sparse architectures.
+
+-
