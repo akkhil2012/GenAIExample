@@ -224,5 +224,81 @@ You should be able to confidently explain:
 
 ---
 
-If you want, I can also prepare a **slide outline** or **visual diagrams** tailored to this talk.
+=============
+NVIDIA
+============
+Mixture‑of‑Experts (MoE) — Theory & Practice
+Foundational & Overview
+
+NVIDIA’s MoE Glossary & Tutorial
+A clear explanation of what Mixture‑of‑Experts models are and why they’re useful in LLMs.
+
+Neptune.ai: MoE LLMs Explained
+A concept‑level article covering gating, sparse activation, and expert parallelism.
+
+Wikipedia – Mixture of Experts
+Classical theory and modern deep‑learning applications for MoEs.
+
+Research Papers (Advanced)
+
+MoE‑Inference‑Bench (arXiv)
+Detailed performance evaluation of MoE models including parallelism and hardware impacts.
+
+⚙️ vLLM & PagedAttention — Implementation & Optimization
+Official & Developer Resources
+
+vLLM PagedAttention Doc
+High‑level and kernel‑level info on how PagedAttention works and why it matters.
+
+Runpod.io Blog – Introduction to vLLM & PagedAttention
+Beginner‑friendly overview of how vLLM improves inference throughput.
+
+LinkedIn Technical Comparison: vLLM vs TensorRT‑LLM
+Highlights PagedAttention and continuous batching trade‑offs.
+
+In‑depth Systems & Memory Insights
+
+Data Science Dojo: In‑Depth PagedAttention Guide
+A long explanation diving into memory fragmentation and block‑based KV cache management (great for mastering intuition).
+
+vLLM MoE Playbook (ROCm Blog)
+Practical strategies for parallelism (Data, Tensor, Expert) in MoE deployments — very useful for engineering talks.
+
+🧠 KV Cache & Quantization Fundamentals
+Documentation & Tutorials
+
+vLLM Quantized KV Cache
+Explains KV cache quantization (e.g., FP8) to reduce memory footprint — a foundation for understanding NVFP4’s role.
+
+Hardware Precision Background
+
+Block Floating Point (BFP) overview (Wikipedia)
+Background on formats like FP8 / FP4 as block floating‑point representations.
+
+🧪 NVIDIA Blackwell & 4‑bit Floating‑Point (NVFP4)
+Architecture & Performance
+
+NVFP4 on Blackwell GPUs – Efficiency Impact
+A practical breakdown of how native 4‑bit formats improve memory bandwidth and inference efficiency.
+
+FP4 MoE Kernel Engineering (Hugging Face Blog)
+Insight into how hardware + kernel design yields throughput gains with FP4.
+
+Medium Guide
+
+NVFP4 Guide on Medium
+Explains how NVFP4 native support benefits GPU compute and training/inference workflows.
+
+🧠 Deep Dives & Advanced Research (Optional)
+
+These are great if you want to go beyond basics and impress technically:
+
+LExI: Layer‑Adaptive Active Experts for MoE Inference — arXiv article on expert selection strategies.
+
+PagedEviction for KV Cache Pruning — another paper connected to improving paged attention efficiency.
+
+PagedAttention Meets FlexAttention — explores paged attention with alternative kernels.
+
+vTensor: Virtual Tensor Mgmt for LLM Serving — addresses fragmentation and memory strategies at scale
+
 
