@@ -1,0 +1,38 @@
+1.
+Mixture-of-Experts (MoE) architectures offer a powerful path to scaling model capacity without proportional increases in compute — but training them efficiently at large scale has traditionally required complex distributed systems expertise. This talk walks through how developers can scale MoE models directly in PyTorch, using distributed features and optimized parallelism strategies
+
+
+2.
+This talk will focus on the role of compilers in the era of AI programming frameworks (e.g. PyTorch) and AI hardware accelerators. AI models are evolving and continue to rely on high-performance computing. Specialized hardware for AI is often hard to program to exploit peak performance. AI models are also evolving in a way that is coupled with hardware strengths. This talk will describe how to build effective compiler systems in a layered way to improve hardware usability and deliver high performance as automatically as possible.
+
+3.
+Problem Framing:
+Speech is the most natural interface for humans—but historically the hardest modality to scale. In multilingual regions like India, text-first AI systems struggle for deep penetration making way for speech as the default gateway to equitable AI access.
+
+Core Thesis:
+ASR has transitioned from acoustic-first pipelines to an LLM-first paradigm. Modern decoder-only Audio LLMs treat speech as another tokenized modality, unlocking better multilingual scaling, reasoning, and adaptation.
+
+What This Talk Covers:
+Evolution of ASR architectures:
+CTC → Encoder–Decoder (with cross-attention) → Decoder-only Audio LLMs
+Why alignment (audio → token space) is the key technical unlock
+Tradeoffs across pradigmns: latency, streaming, robustness, multilinguality
+Practical post-training strategies for domain- and language-specific ASR
+Why It Matters:
+This shift collapses the boundary between speech recognition and language understanding—making speech a first-class citizen in foundation model stacks.
+
+4.beyond-the-brrr-building-a-unified-ecosystem-for-optimized-kernels
+As deep learning models grow in complexity, the "efficiency tax" of generic operators has become a critical bottleneck. While custom kernels offer the promise of hardware-saturating performance, making the hardware go "brrr", the reality of implementing them is fraught with challenges. Developers are often caught in a cycle of managing device-specific dependencies, handling complex compilation chains, and struggling with the lack of modularity when swapping kernels across different hardware backends.
+In this talk, we bridge the gap between low-level optimization and high-level developer productivity. We will explore why optimized kernels are essential for modern workloads and dissect the friction points that make them difficult to maintain and distribute. We will introduce the new Kernels library from Hugging Face, discussing how it makes the experience of working with pre-built kernels a seamless and enjoyable experience. Participants will learn how to discover, use, and share optimized kernels as easily as model checkpoints. They will also see how Kernels is integrated inside the mighty Transformers library and how it helps in shipping latency improvements.
+
+5.
+Deploying massive Mixture-of-Experts (MoE) models is primarily constrained by memory bandwidth and KV-cache fragmentation. This session presents an optimized inference pipeline integrating vLLM’s PagedAttention and continuous batching with the native hardware acceleration of the NVIDIA Blackwell architecture. We will demonstrate the implementation of native NVFP4 quantization on Blackwell Tensor Cores, analyzing how 4-bit floating-point precision on Blackwell mitigates memory bandwidth bottlenecks to accelerate tensor execution and maximize token throughput for sparse architectures.
+
+
+
+
+
+TO DO:
+====
+PUT SET PF QUESTIONS FOR EACH TOPICS TO CRATE VISIBILITY.
+WRITE PROMPT TO ASK HW T GAIN VISIILITY
