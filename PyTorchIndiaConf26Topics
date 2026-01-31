@@ -29,6 +29,152 @@ In this talk, we bridge the gap between low-level optimization and high-level de
 Deploying massive Mixture-of-Experts (MoE) models is primarily constrained by memory bandwidth and KV-cache fragmentation. This session presents an optimized inference pipeline integrating vLLM’s PagedAttention and continuous batching with the native hardware acceleration of the NVIDIA Blackwell architecture. We will demonstrate the implementation of native NVFP4 quantization on Blackwell Tensor Cores, analyzing how 4-bit floating-point precision on Blackwell mitigates memory bandwidth bottlenecks to accelerate tensor execution and maximize token throughput for sparse architectures.
 
 
+===========
+questions to pose:
+======
+Core Resources to Understand Topic #1 (MoE in PyTorch)
+🧠 1) Foundational Papers
+
+“Mixture of Experts with Sharding” — Google / GShard (introduces MoE scaling)
+➤ Understand expert routing and conditional computation.
+
+“Switch Transformers: Scaling to Trillion Parameter Models”
+➤ One of the most influential MoE models.
+
+“Fast MoE: Efficient Sparsely Activated Transformers”
+➤ Optimization-oriented strategies relevant to PyTorch scaling.
+
+These give the theory — gating, expert balancing, capacity factor, load balancing loss.
+
+🛠 2) PyTorch & MoE Training Tutorials
+
+PyTorch MoE Example Repos
+
+Facebook / PyTorch MoE implementations
+
+Examples in torch.distributed (RPC based)
+
+DeepSpeed MoE Tutorials
+
+How ZeRO + MoE jointly scale training
+
+Expert balancing & partitioning
+
+DeepSpeed implementation details help bridge theory → practical execution.
+
+🧪 3) Lecture / Video Resources
+
+MIT Deep Learning Lecture: Efficient Models
+
+Mixture of Experts intro from first principles
+
+YouTube talks
+
+“MoE breakdown” sessions by Hugging Face, NVIDIA GTC talks
+
+Practical PyTorch implementations
+
+📘 4) Blog / Conceptual Writeups
+
+Distill Pub — MoE visual explanations
+
+Great for intuition around how gates pick experts
+
+Hugging Face & DeepSpeed blogs
+
+Step-by-step training considerations
+
+🔍 Key Concepts You Should Master Before the Talk
+
+📌 Expert routing & gate design
+📌 Load balancing & capacity factor
+📌 Distributed training overheads
+📌 Memory & communication bottlenecks
+📌 Comparison with dense models
+
+🧠 5 High-Impact Questions to Ask at the Talk
+
+These aren’t generic — they’re crafted to show systems-level depth and practical engineering insight.
+
+❓ Question 1 — Load Balancing
+
+“How does your implementation handle expert capacity imbalance at scale, and what load balancing losses or strategies do you use to prevent expert underutilization?”
+
+💡 Why it’s impressive
+MoE systems break if experts aren’t balanced — this is where many go wrong.
+
+✅ Strong Answer
+
+“We use a combination of auxiliary load-balancing loss terms and capacity factors. By using a softmax gating with additional balancing regularizers, we discourage the gate from collapsing to a few experts. In PyTorch distributed, we also shard experts so that each device holds multiple experts, which reduces imbalance across machines.”
+
+❓ Question 2 — Communication Overhead
+
+“In your distributed design, where do you see most of the communication overhead — expert updates or routing — and how do you mitigate that?”
+
+💡 Why it’s impressive
+Recruiters want to see you think about the hidden cost of distribution.
+
+✅ Strong Answer
+
+“The dominant overhead usually comes from all-to-all communication during expert dispatch. To mitigate this, the implementation balances local expert replicas and uses efficient collective operations. When possible, we fuse communication with forward/backward passes, reducing transfer overhead between GPUs.”
+
+❓ Question 3 — Scalability Limits
+
+“At what scale (experts × batch size × devices) did you observe diminishing returns, and what were the system bottlenecks?”
+
+💡 Why it’s impressive
+Shows you think about engineering ceilings, not just theory.
+
+✅ Strong Answer
+
+“We saw diminishing returns when communication and KV cache overheads exceeded compute cost — around 128 experts with small batch sizes. At that point, routing overhead dominates. The threshold depends on batch size, expert count, and the quality of the collective backend (NCCL / Gloo).”
+
+❓ Question 4 — Model Accuracy Stability
+
+“Did you observe any pattern where increasing experts hurt convergence stability, and if so, what mitigation strategies did you adopt?”
+
+💡 Why it’s impressive
+Connects system scaling with training quality.
+
+✅ Strong Answer
+
+“Yes — as expert count grows, the gate can become unstable. We used warm-up schedules for gate weights, gradient clipping on gating parameters, and occasionally auxiliary losses to stabilize routes. Normalizing expert outputs also helped.”
+
+❓ Question 5 — Memory & Gradient Overheads
+
+“What memory optimizations did you require in PyTorch — like gradient checkpointing or expert sharding — to handle tens of millions of parameters?”
+
+💡 Why it’s impressive
+Shows you care about actual capacity limits.
+
+✅ Strong Answer
+
+“We heavily rely on expert sharding and checkpointing for intermediate activations. By sharding expert weights across devices, we reduce peak memory. Checkpointing the expert forward pass saves activation memory at the cost of recompute, which was balanced with batch size selection.”
+
+📌 Bonus: 3 Things to Say Before Asking Your Question
+
+You want to frame yourself as a peer — not someone fishing for an answer.
+
+Try these openers:
+
+Before Q1
+
+“I’ve seen load imbalance crash MoE training at scale — I’m curious how you approach it.”
+
+Before Q2
+
+“In my experience with distributed workloads, communication trumps compute — how do you see it in MoE?”
+
+Before Q5
+
+“Memory fragmentation becomes critical when sharding — have you run into that?”
+
+📈 How This Positions You to Stakeholders
+
+✔ Recruiters: You immediately sound like someone familiar with real system constraints
+✔ Engineering Leaders: You show systems maturity, not just model theory
+✔ Open-Source Maintainers: You ask questions that could inform future frameworks
+
 
 
 
