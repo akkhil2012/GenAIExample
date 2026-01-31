@@ -175,6 +175,220 @@ Before Q5
 ✔ Engineering Leaders: You show systems maturity, not just model theory
 ✔ Open-Source Maintainers: You ask questions that could inform future frameworks
 
+======
+TOPICS MUST COVER:
+====
+
+Perfect 👍
+Here’s a **tight, no-fluff 20-minute deep-prep plan** for **Topic 1: Scaling Mixture-of-Experts (MoE) in PyTorch**, optimized so you can **listen to the talk like an insider** and ask questions that *land*.
+
+I’ve structured this like a **Staff+ engineer cram guide** — what to listen to, what to skim, and *what to mentally anchor* while listening.
+
+---
+
+# ⏱️ 20-Minute MoE Mastery Plan (Talk-Ready)
+
+## 🧠 Minute 0–5: Core Mental Model (NON-NEGOTIABLE)
+
+**Goal:** Understand *why* MoE exists and where it breaks.
+
+### 🎧 Listen / Read (pick 1)
+
+* **Switch Transformers overview talk** (YouTube – Google Research)
+* **Hugging Face blog: “Mixture of Experts Explained”**
+
+### Anchor these ideas in your head:
+
+* MoE = **conditional computation** (only few experts active per token)
+* Scaling benefit comes from **parameter count ≠ FLOPs**
+* Core components:
+
+  * **Gate** (router)
+  * **Experts** (FFNs)
+  * **Capacity factor**
+  * **Load balancing loss**
+
+👉 If you can explain *why MoE is cheaper than dense models* in 2 sentences, move on.
+
+---
+
+## 🧱 Minute 5–10: PyTorch + Distributed Reality
+
+**Goal:** Understand *how this actually runs* in PyTorch.
+
+### 🎧 Listen / Skim
+
+* **DeepSpeed MoE tutorial (video or blog)**
+* PyTorch Distributed overview (focus on `all_to_all`)
+
+### Focus on:
+
+* Why **all-to-all communication** exists in MoE
+* Experts are often **sharded across GPUs**
+* Forward pass = route → dispatch → compute → gather
+
+### Key realization (important for questions):
+
+> MoE training is often **communication-bound, not compute-bound**
+
+---
+
+## ⚙️ Minute 10–15: Failure Modes & Scaling Limits
+
+**Goal:** Know what *breaks* so your questions sound real.
+
+### 🎧 Read / Watch
+
+* **FastMoE paper summary blog**
+* Any talk mentioning “expert collapse” or “imbalance”
+
+### Lock in these failure modes:
+
+* **Expert collapse** (gate sends everything to 1–2 experts)
+* **Underutilized GPUs** despite massive models
+* **Batch size sensitivity**
+* **Routing instability early in training**
+
+If the speaker mentions *any* of these — you’re aligned.
+
+---
+
+## 🧪 Minute 15–20: Optimization Levers (This is where you impress)
+
+**Goal:** Connect model → system → cost.
+
+### 🎧 Skim
+
+* DeepSpeed MoE optimization section
+* Blogs mentioning:
+
+  * Capacity factor tuning
+  * Auxiliary load balancing loss
+  * Expert replication vs sharding
+
+### Mental checklist:
+
+* Load balancing loss ≠ optional
+* Capacity factor is a **latency vs utilization tradeoff**
+* Bigger MoE ≠ better unless routing is stable
+
+---
+
+# 🎯 5 MUST-ASK QUESTIONS (WITH ANSWERS YOU SHOULD KNOW)
+
+These are **talk-safe** (won’t stump speakers) but **audience-impressive**.
+
+---
+
+## ❓ Q1 — Load Balancing (Top-Tier Question)
+
+**Question**
+
+> *“How do you prevent expert collapse at scale, and what role does the load-balancing loss play relative to capacity factor tuning?”*
+
+**What a good answer sounds like**
+
+> “We use an auxiliary load-balancing loss to encourage uniform routing across experts, combined with a capacity factor that limits how many tokens an expert can accept. The balance is important — too low capacity increases token dropping, too high reduces sparsity benefits.”
+
+**Why this impresses**
+
+* Shows you understand **training dynamics + systems**
+
+---
+
+## ❓ Q2 — Communication Bottleneck
+
+**Question**
+
+> *“In your PyTorch implementation, does all-to-all communication dominate runtime at scale, and how do you mitigate it?”*
+
+**Expected answer**
+
+> “Yes, all-to-all often dominates. We mitigate it by expert sharding, overlapping communication with compute, and ensuring sufficient batch size so routing overhead amortizes.”
+
+**Signal**
+
+* You’re thinking like a **distributed systems engineer**
+
+---
+
+## ❓ Q3 — Scaling Ceiling
+
+**Question**
+
+> *“Did you observe a point where increasing the number of experts stopped improving throughput or convergence?”*
+
+**Expected answer**
+
+> “Yes — beyond a certain expert count, routing and communication overhead outweigh compute savings, especially with small batch sizes. Scaling only helps when batch size and hardware topology support it.”
+
+**Signal**
+
+* You think in **engineering limits**, not hype
+
+---
+
+## ❓ Q4 — Training Stability
+
+**Question**
+
+> *“How sensitive was convergence to gate initialization and early training dynamics?”*
+
+**Expected answer**
+
+> “Very sensitive. We often warm up gate parameters, apply gradient clipping, and sometimes delay expert sparsity early in training to stabilize routing.”
+
+**Signal**
+
+* This is a **research-meets-production** question
+
+---
+
+## ❓ Q5 — PyTorch vs Custom Systems
+
+**Question**
+
+> *“What trade-offs did you face using native PyTorch distributed primitives versus more specialized MoE systems?”*
+
+**Expected answer**
+
+> “PyTorch offers flexibility and composability, but specialized systems can optimize routing and communication more aggressively. PyTorch requires careful tuning to avoid abstraction overheads.”
+
+**Signal**
+
+* Positions you as someone evaluating **build vs buy**
+
+---
+
+# 🧠 ONE-LINE INTRO YOU CAN USE BEFORE ASKING
+
+This matters more than people think.
+
+> “I’ve been looking into scaling sparse models in PyTorch, especially around expert routing and distributed overhead…”
+
+That single sentence:
+
+* Frames you as **peer**, not attendee
+* Makes recruiters *look up*
+
+---
+
+# 🚀 How This Helps Your Visibility
+
+* **Audience:** You sound calm, prepared, and precise
+* **Speaker:** You ask something they *care* about
+* **Recruiters:** You register as “systems + ML” talent
+
+---
+
+If you want next:
+
+* I can compress this into a **1-page cheat sheet PDF**
+* Or map these questions to **NVIDIA / Google / Meta recruiter signals**
+* Or prep you for **follow-up hallway conversations**
+
+Just say the word.
+
 
 
 
