@@ -1,0 +1,312 @@
+Below are **speaker-ready, “deep but practical” answers** for Q11–Q21, with **what vLLM is doing internally**, **what knobs exist**, and **what you should ask speakers** to validate their real-world experience.
+
+---
+
+## 11) How does vLLM balance high throughput with per-request latency (interactive chat)?
+
+vLLM’s core trick is: **keep the GPU busy without making any single request wait too long**.
+
+### What vLLM does under the hood
+
+* **Continuous batching**: instead of waiting to form a fixed batch, vLLM continuously merges *new* requests into the next scheduling step so GPU stays utilized even with uneven traffic. ([vLLM Blog][1])
+* **PagedAttention (KV paging)**: vLLM manages KV cache in fixed-size “pages/blocks,” reducing fragmentation and allowing more concurrent sequences than naive contiguous allocations. ([vLLM Blog][1])
+* **Chunked prefill (latency-aware scheduling)**: long prompts (prefill phase) can be **chunked** so they don’t block **decode** (token-by-token) for interactive users. vLLM’s policy explicitly **prioritizes decode** first, then fills remaining token budget with prefill chunks. ([docs.vllm.ai][2])
+
+### Why this helps chat latency
+
+For chat, users feel:
+
+* **TTFT** (time to first token)
+* **ITL/TBT** (inter-token latency / time between tokens)
+
+Chunked prefill protects **inter-token latency** for already-streaming chats by preventing a giant new prompt from monopolizing the next step. ([docs.vllm.ai][2])
+
+**Speaker question to ask:**
+“How aggressive is your chunked prefill + token budget? What do your p95 TTFT and p95 inter-token latency look like under load?”
+
+---
+
+## 12) At high concurrency, how do we control inter-token latency for premium / real-time users?
+
+At high concurrency you’re fighting a real constraint: **decode is memory-bandwidth + KV-cache dominated**, and every additional concurrent sequence competes for the same resources.
+
+### Practical strategies (used in production)
+
+1. **Class-based admission control (front door)**
+
+   * Put premium users in a separate queue / separate service tier.
+   * Enforce **max concurrent sequences** or **token-rate quotas** per tier.
+   * This is often more reliable than trying to “micro-prioritize” inside one shared engine.
+
+2. **Separate replicas / pools (hard isolation)**
+
+   * Run **two vLLM deployments**: “Premium low-latency” vs “Bulk”.
+   * Premium pool uses stricter batching (lower max concurrency) to keep ITL tight.
+
+3. **Tune chunked prefill to protect decode**
+
+   * vLLM scheduling prioritizes decode, but you can further protect short chats by limiting how many long-prefills can run concurrently via scheduler config like **`max_long_partial_prefills`** (lets short prompts jump ahead of long ones). ([docs.vllm.ai][3])
+
+4. **Disaggregate prefill vs decode (advanced)**
+
+   * Separate “prefill workers” and “decode workers” so long prompts don’t disturb steady decode streaming. Ray Serve documents this pattern and KV transfer options. ([docs.ray.io][4])
+
+**Speaker question to ask:**
+“Do you isolate premium traffic via separate replicas, or do you rely on a single shared engine? What’s your target p95 inter-token latency SLO?”
+
+---
+
+## 13) Can batching be tuned differently for chatbots vs batch workloads?
+
+Yes—and you *should*.
+
+### Chatbot tuning goal
+
+Protect responsiveness:
+
+* Lower queueing delay
+* Stable ITL/TBT
+* Predictable TTFT
+
+Typical knobs (conceptually):
+
+* **Lower** max concurrency / sequences
+* **Lower** token budget per step if it causes bursty latency
+* **More aggressive** chunked prefill to prevent prompt storms from harming decode ([docs.vllm.ai][5])
+
+### Batch tuning goal
+
+Max tokens/sec and cost efficiency:
+
+* Higher **`max_num_seqs` / `max_num_batched_tokens`** (more work per step)
+* Accept higher p95 latency
+* Possibly longer queue waits to form bigger batches (depending on stack)
+
+**Speaker question to ask:**
+“Do you run separate configs (or separate pools) for chat vs batch? Which scheduler parameters moved your p95 latency the most?”
+
+---
+
+## 14) Long context + high concurrency: how does vLLM KV paging behave?
+
+PagedAttention reduces fragmentation, but it doesn’t create free memory. Under **very long context + high concurrency**, the real problem becomes:
+
+* **KV footprint explodes**
+* vLLM must decide: **admit fewer sequences**, **swap**, or **reject**
+
+vLLM’s scheduling + chunked prefill helps latency fairness, but memory pressure still dominates. Chunked prefill also exists partly to avoid large prefills monopolizing compute and worsening inter-token latency. ([docs.vllm.ai][2])
+
+**What to expect under stress**
+
+* If you keep accepting long-context requests, you’ll see:
+
+  * TTFT inflation (prefill chunks still take time)
+  * decode slowdowns (more cache traffic)
+  * potential swapping behavior depending on your configuration and backend
+
+**Speaker question to ask:**
+“At what point do you start rejecting vs swapping vs shedding load for long-context traffic?”
+
+---
+
+## 15) Practical GPU memory limits for 8K–32K context models + OOM best practices
+
+### Reality check: KV cache dominates
+
+For long context, memory isn’t just weights.
+
+* **Weights**: mostly fixed per model (and reduced via quantization/tensor parallel)
+* **KV cache**: grows with **(layers × hidden size × seq length × concurrent sequences)**
+
+So planning must be done in **“KV-per-token” × “total tokens in-flight”** terms.
+
+### Best practices to avoid OOM in production
+
+1. **Hard-limit total in-flight tokens**
+
+   * Cap: `max_num_batched_tokens` (or equivalent budget) so you never admit more tokens than memory can handle. ([docs.vllm.ai][2])
+
+2. **Control concurrency explicitly**
+
+   * Cap concurrent sequences for long-context endpoints.
+   * Use different endpoint tiers for 32K vs 8K.
+
+3. **Prefer chunked prefill**
+
+   * Prevent giant prompts from blocking decode and creating bursty memory pressure. ([docs.vllm.ai][5])
+
+4. **Use prefix caching when prompts repeat**
+
+   * Big wins for chat systems with repetitive system prompts / templates (if supported in your stack). ([vLLM Blog][1])
+
+5. **Load shedding + retries discipline**
+
+   * Many “OOM incidents” are actually **retry storms** after a few slow requests.
+
+**Speaker question to ask (very good one):**
+“What’s your operational ‘safe envelope’: max total tokens in-flight per GPU, and what alarms trigger before OOM?”
+
+---
+
+## 16) Any LLM architectures/features vLLM struggles with?
+
+This evolves quickly; the most reliable way is:
+
+* check **Supported Models / architectures** in docs ([docs.vllm.ai][6])
+* and ask what’s still “experimental” in their deployment
+
+Also note: **vLLM V1** was a major re-architecture (scheduler, KV manager, worker, etc.), and “feature parity” across V0/V1 has historically been an area to verify for your exact needs. ([Red Hat Developer][7])
+
+**Speaker question to ask:**
+“Are you on vLLM V0 or V1, and which missing/unstable features forced workarounds?”
+
+---
+
+## 17) How mature is MoE + newer variants support? Limitations with fine-tuned or quantized models?
+
+### MoE maturity: “works, but kernels + quant combos can bite”
+
+MoE is supported for major architectures, but **quantization + MoE** has had real limitations depending on kernel availability:
+
+* vLLM issue discussions explicitly note fused MoE kernels not supporting certain quantization paths (historically). ([GitHub][8])
+* Community reports indicate some **bitsandbytes INT4 quantized MoE** variants are not supported due to missing compatible fused kernels. ([vLLM Forums][9])
+
+### Fine-tunes & quantized models
+
+* Fine-tuned: usually fine if architecture is supported, but verify:
+
+  * rotary scaling / long-context variants
+  * custom attention mods
+* Quantized:
+
+  * compatibility depends on exact quant method + GPU arch + kernel path (e.g., FP8 kernel limitations mentioned in the wild). ([Hugging Face][10])
+
+**Speaker question to ask:**
+“What exact MoE + quant combos are production-safe for you today (FP8? INT8? GPTQ/AWQ?), and what fails?”
+
+---
+
+## 18) How does vLLM handle horizontal scaling across nodes today?
+
+vLLM itself is an engine; horizontal scaling is typically done by:
+
+* **replicating engines** and **routing** requests (stateless at router level)
+* or using a distributed framework like **Ray** for multi-node serving workflows
+
+vLLM docs include **multi-node serving** patterns using Ray clusters. ([docs.vllm.ai][11])
+
+**Speaker question to ask:**
+“Is your scaling ‘N independent replicas behind a router’, or do you use Ray/KubeRay for cluster-style management?”
+
+---
+
+## 19) Multi-node inference challenges + roadmap + Kubernetes autoscaling integration
+
+### Common multi-node challenges
+
+1. **Stateful load** (KV cache + long sessions)
+
+   * Autoscaling is harder when requests aren’t easily movable mid-generation.
+2. **Warmup and model load time**
+
+   * New pods may take minutes to become useful; autoscalers can oscillate.
+3. **Queueing and fairness across replicas**
+
+   * You need smart routing based on load, not round-robin.
+
+### Kubernetes patterns people use
+
+* **KubeRay** is often used when you want Ray-managed clusters on Kubernetes, and the vLLM community has discussed this integration and autoscaler support. ([GitHub][12])
+
+### Directional “where it’s going”
+
+The industry trend is toward:
+
+* **prefill/decode disaggregation**
+* better orchestration (Ray Serve LLM highlights wide-EP/disaggregated serving patterns) ([Anyscale][13])
+
+**Speaker question to ask:**
+“How do you autoscale safely without killing tail latency—do you scale on GPU utilization, tokens/sec, queue depth, or TTFT?”
+
+---
+
+## 20) Cost per request vs other engines + where cost spikes happen + what to measure
+
+### How vLLM usually improves cost
+
+* Better GPU utilization via continuous batching
+* Less KV waste via paging
+* More stable throughput at concurrency ([vLLM Blog][1])
+
+### Where teams see unexpected cost spikes
+
+1. **Long-context adoption creep**
+
+   * A small % of 32K requests can dominate GPU hours.
+2. **Bad batching config**
+
+   * Overprotecting latency (too low concurrency) → underutilized GPUs → cost spikes.
+3. **Retry storms + timeouts**
+
+   * Timeouts cause retries; retries increase load; cost jumps while latency worsens.
+4. **Overprovisioning for p99**
+
+   * Premium SLOs often force extra replicas even when average load is low.
+
+### Metrics you should track (non-negotiable)
+
+* **tokens/sec per GPU** (throughput)
+* **TTFT p50/p95/p99**
+* **Inter-token latency (TBT/ITL) p95**
+* **GPU memory headroom + OOM / swap events**
+* **KV cache utilization / hit rate** (if using prefix caching)
+* **Queue depth / wait time**
+* **Cost per 1K output tokens** (and split by tier: 8K vs 32K endpoints)
+
+**Speaker question to ask:**
+“What’s your cost model—$/1K output tokens—and what % of spend is driven by long-context users?”
+
+---
+
+## 21) Given these limits—what workloads should we NOT use vLLM for today?
+
+Use this as a nuanced discussion starter (not a blanket statement):
+
+### Avoid / be cautious when:
+
+1. **Hard real-time, ultra-low jitter streaming**
+
+   * If you need extremely tight inter-token latency at high concurrency, you’ll likely need **dedicated premium pools** or disaggregation—not one shared engine.
+
+2. **Excessive long-context + high concurrency without strict admission control**
+
+   * This is where OOM and tail latency disasters happen unless you enforce a “token budget envelope.”
+
+3. **MoE + certain quantization paths (depending on your stack)**
+
+   * Especially if you rely on bitsandbytes INT4 MoE or other combinations that lack fused-kernel support. ([vLLM Forums][9])
+
+4. **Architectures/features not fully supported in your chosen vLLM version**
+
+   * Always validate against the supported model list and the version you deploy. ([docs.vllm.ai][6])
+
+**Speaker question to ask:**
+“What’s the one workload you tried on vLLM and later moved off—and why?”
+
+---
+
+If you want, I can also convert these into a **one-page “conference cheat sheet”** (question → 30-sec framing → 2 deep follow-ups → what signal you’re testing for), so you can pull it up on your phone during hallway conversations.
+
+[1]: https://blog.vllm.ai/2025/09/05/anatomy-of-vllm.html?utm_source=chatgpt.com "Inside vLLM: Anatomy of a High-Throughput LLM Inference ..."
+[2]: https://docs.vllm.ai/en/v0.4.2/models/performance.html?utm_source=chatgpt.com "Performance and Tuning - vLLM"
+[3]: https://docs.vllm.ai/en/latest/api/vllm/config/scheduler/?utm_source=chatgpt.com "vllm.config.scheduler"
+[4]: https://docs.ray.io/en/latest/serve/llm/user-guides/prefill-decode.html?utm_source=chatgpt.com "Prefill/decode disaggregation - Ray Serve"
+[5]: https://docs.vllm.ai/en/stable/configuration/optimization/?utm_source=chatgpt.com "Optimization and Tuning - vLLM"
+[6]: https://docs.vllm.ai/en/latest/models/supported_models/?utm_source=chatgpt.com "Supported Models - vLLM"
+[7]: https://developers.redhat.com/articles/2025/01/28/vllm-v1-a-major-upgrade-vllms-core-architecture?utm_source=chatgpt.com "vLLM V1 Alpha: A major upgrade to vLLM's core architecture"
+[8]: https://github.com/vllm-project/vllm/issues/2663?utm_source=chatgpt.com "[BUG] Quantization support for MoE models · Issue #2663"
+[9]: https://discuss.vllm.ai/t/moe-quantization/594?utm_source=chatgpt.com "MoE quantization - vLLM Forums"
+[10]: https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8/discussions/2?utm_source=chatgpt.com "Qwen/Qwen3-30B-A3B-FP8 · Remove vLLM FP8 Limitation"
+[11]: https://docs.vllm.ai/en/stable/examples/online_serving/multi-node-serving/?utm_source=chatgpt.com "Multi-Node-Serving - vLLM"
+[12]: https://github.com/vllm-project/vllm/issues/3522?utm_source=chatgpt.com "Support distributing serving with KubeRay's autoscaler · ..."
+[13]: https://www.anyscale.com/blog/ray-serve-llm-anyscale-apis-wide-ep-disaggregated-serving-vllm?utm_source=chatgpt.com "APIs for Wide-EP and Disaggregated Serving with vLLM By"
